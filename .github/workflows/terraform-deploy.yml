@@ -160,7 +160,13 @@ jobs:
     needs: terraform-plan
     if: github.event.inputs.action == 'apply' || (github.ref == 'refs/heads/main' && github.event_name == 'push')
     environment: ${{ github.event.inputs.environment || 'staging' }}
+
+    outputs:
+      role_id: ${{ steps.tf_output.outputs.role_id }}
+      secret_id: ${{ steps.tf_output.outputs.secret_id }}
+      vault_ssh_path: ${{ steps.tf_output.outputs.vault_ssh_path }}
     
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -189,16 +195,14 @@ jobs:
       working-directory: ${{ steps.set-directory.outputs.tf_dir }}
       run: terraform apply -auto-approve
 
-    - name: Terraform Output
+    - name: Get Terraform Outputs
+      id: tf_output
+      if: github.event.inputs.action == 'apply' || (github.ref == 'refs/heads/main' && github.event_name == 'push')
+      run: |
+        echo "role_id=$(terraform output -raw github_actions_role_id)" >> $GITHUB_OUTPUT
+        echo "secret_id=$(terraform output -raw github_actions_secret_id)" >> $GITHUB_OUTPUT
+        echo "vault_ssh_path=$(terraform output -raw vault_ssh_key_path)" >> $GITHUB_OUTPUT
       working-directory: ${{ steps.set-directory.outputs.tf_dir }}
-      run: terraform output -json > terraform-outputs.json
-
-    - name: Upload Terraform Outputs
-      uses: actions/upload-artifact@v4
-      with:
-        name: terraform-outputs-${{ github.event.inputs.environment || 'staging' }}
-        path: ${{ steps.set-directory.outputs.tf_dir }}/terraform-outputs.json
-        retention-days: 30
 
   terraform-destroy:
     runs-on: ubuntu-latest
