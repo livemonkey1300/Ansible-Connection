@@ -1,0 +1,25 @@
+---
+- name: Basic server setup
+  hosts: webservers
+  become: yes
+  tasks:
+    - name: Update package cache
+      apt:
+        update_cache: yes
+      when: ansible_os_family == "Debian"
+
+    - name: Install common packages
+      package:
+        name:
+          - vim
+          - curl
+          - wget
+          - git
+        state: present
+
+    - name: Create ansible user
+      user:
+        name: ansible
+        shell: /bin/bash
+        create_home: yes
+        state: present
