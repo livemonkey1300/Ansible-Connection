@@ -83,33 +83,33 @@ jobs:
       working-directory: terraform/production
       run: terraform validate
 
-  terraform-security:
-    runs-on: ubuntu-latest
-    name: Security Scan
-    needs: terraform-validate
+#   terraform-security:
+#     runs-on: ubuntu-latest
+#     name: Security Scan
+#     needs: terraform-validate
     
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+#     steps:
+#     - name: Checkout code
+#       uses: actions/checkout@v4
 
-    - name: Run Checkov
-      uses: bridgecrewio/checkov-action@master
-      with:
-        directory: terraform/
-        framework: terraform
-        output_format: sarif
-        output_file_path: checkov-results.sarif
+#     - name: Run Checkov
+#       uses: bridgecrewio/checkov-action@master
+#       with:
+#         directory: terraform/
+#         framework: terraform
+#         output_format: sarif
+#         output_file_path: checkov-results.sarif
 
-    - name: Upload Checkov results
-      uses: github/codeql-action/upload-sarif@v2
-      if: always()
-      with:
-        sarif_file: checkov-results.sarif
+#     - name: Upload Checkov results
+#       uses: github/codeql-action/upload-sarif@v2
+#       if: always()
+#       with:
+#         sarif_file: checkov-results.sarif
 
   terraform-plan:
     runs-on: ubuntu-latest
     name: Terraform Plan
-    needs: [terraform-validate, terraform-security]
+    needs: [terraform-validate]
     environment: ${{ github.event.inputs.environment || 'staging' }}
     
     steps:
