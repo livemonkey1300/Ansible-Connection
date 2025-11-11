@@ -1,0 +1,36 @@
+name: Deploy to Staging
+
+on:
+  push:
+    branches: [ develop ]
+  workflow_dispatch:
+
+jobs:
+  deploy-staging:
+    uses: ./.github/workflows/environment-deploy.yml
+    with:
+      environment: staging
+      playbook: playbook/test.yml
+    secrets:
+      ANSIBLE_SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_KEY }}
+      TARGET_HOST: ${{ secrets.STAGING_HOST }}
+      ANSIBLE_VAULT_PASSWORD: ${{ secrets.ANSIBLE_VAULT_PASSWORD }}
+
+---
+name: Deploy to Production
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  deploy-production:
+    uses: ./.github/workflows/environment-deploy.yml
+    with:
+      environment: production  
+      playbook: playbook/test.yml
+    secrets:
+      ANSIBLE_SSH_PRIVATE_KEY: ${{ secrets.PRODUCTION_SSH_KEY }}
+      TARGET_HOST: ${{ secrets.PRODUCTION_HOST }}
+      ANSIBLE_VAULT_PASSWORD: ${{ secrets.ANSIBLE_VAULT_PASSWORD }}

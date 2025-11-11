@@ -1,0 +1,117 @@
+name: Environment Deploy
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        type: string
+      playbook:
+        description: 'Playbook to run'
+        required: false
+        type: string
+        default: 'playbook/test.yml'
+    secrets:
+      ANSIBLE_SSH_PRIVATE_KEY:
+        required: true
+      TARGET_HOST:
+        required: true
+      ANSIBLE_VAULT_PASSWORD:
+        required: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Cache Python dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+
+    - name: Install Ansible and dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install ansible requests pyyaml
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+    - name: Setup SSH Agent
+      uses: webfactory/ssh-agent@v0.8.0
+      with:
+        ssh-private-key: ${{ secrets.ANSIBLE_SSH_PRIVATE_KEY }}
+
+    - name: Setup Ansible Vault
+      if: secrets.ANSIBLE_VAULT_PASSWORD != ''
+      run: |
+        echo "${{ secrets.ANSIBLE_VAULT_PASSWORD }}" > .vault_pass
+        chmod 600 .vault_pass
+
+    - name: Add SSH known hosts
+      run: |
+        mkdir -p ~/.ssh
+        chmod 700 ~/.ssh
+        # Add target hosts to known_hosts
+        for host in ${{ secrets.TARGET_HOST }}; do
+          ssh-keyscan -H "$host" >> ~/.ssh/known_hosts 2>/dev/null || true
+        done
+        chmod 644 ~/.ssh/known_hosts
+
+    - name: Make scripts executable
+      run: |
+        chmod +x inventory/generate_inventory.py
+        find . -name "*.sh" -exec chmod +x {} \;
+
+    - name: Validate Ansible configuration
+      run: |
+        ansible-config dump --only-changed
+        ansible-inventory --list
+
+    - name: Test connectivity
+      run: |
+        ansible all -m ping
+
+    - name: Run pre-deployment checks
+      run: |
+        # Check if services are running
+        ansible all -m service -a "name=sshd state=started" || true
+        
+        # Check disk space
+        ansible all -m shell -a "df -h" || true
+
+    - name: Deploy with Ansible
+      run: |
+        playbook="${{ inputs.playbook }}"
+        echo "Deploying with playbook: $playbook"
+        echo "Environment: ${{ inputs.environment }}"
+        
+        ansible-playbook "$playbook" \
+          --extra-vars "environment=${{ inputs.environment }}" \
+          --extra-vars "deploy_version=${{ github.sha }}" \
+          --extra-vars "deploy_branch=${{ github.ref_name }}"
+
+    - name: Post-deployment verification
+      run: |
+        # Add your verification steps here
+        ansible all -m setup -a "filter=ansible_uptime_seconds"
+
+    - name: Cleanup
+      if: always()
+      run: |
+        # Remove vault password file
+        rm -f .vault_pass
+        
+        # Clear SSH agent
+        ssh-add -D || true
