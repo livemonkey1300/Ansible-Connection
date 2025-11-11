@@ -151,51 +151,8 @@ jobs:
     - name: Terraform Plan
       working-directory: ${{ steps.set-directory.outputs.tf_dir }}
       run: |
-        terraform plan -no-color -out=tfplan
-        terraform show -no-color tfplan > plan.txt
+        terraform plan
 
-    - name: Upload Plan
-      uses: actions/upload-artifact@v3
-      with:
-        name: terraform-plan-${{ github.event.inputs.environment || 'staging' }}
-        path: ${{ steps.set-directory.outputs.tf_dir }}/plan.txt
-        retention-days: 5
-
-    - name: Comment PR with Plan
-      if: github.event_name == 'pull_request'
-      uses: actions/github-script@v6
-      with:
-        script: |
-          const fs = require('fs');
-          const environment = '${{ inputs.environment || github.event.inputs.environment }}' || 'staging';
-          const planPath = '${{ steps.set-directory.outputs.tf_dir }}/plan.txt';
-          
-          let plan = '';
-          try {
-            plan = fs.readFileSync(planPath, 'utf8');
-          } catch (error) {
-            plan = 'Could not read plan file';
-          }
-          
-          const output = `## Terraform Plan - ${environment.charAt(0).toUpperCase() + environment.slice(1)}
-          
-          <details>
-          <summary>Show Plan</summary>
-          
-          \`\`\`
-          ${plan}
-          \`\`\`
-          
-          </details>
-          
-          *Pusher: @${{ github.actor }}, Action: \`${{ github.event_name }}\`, Workflow: \`${{ github.workflow }}\`*`;
-          
-          github.rest.issues.createComment({
-            issue_number: context.issue.number,
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            body: output
-          });
 
   terraform-apply:
     runs-on: ubuntu-latest
@@ -214,18 +171,6 @@ jobs:
         terraform_version: ${{ env.TF_VERSION }}
         cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
 
-    - name: Configure DigitalOcean
-      env:
-        DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
-      run: echo "DIGITALOCEAN_TOKEN=${DIGITALOCEAN_TOKEN}" >> $GITHUB_ENV
-
-    - name: Configure Vault
-      env:
-        VAULT_ADDR: ${{ secrets.VAULT_ADDR }}
-        VAULT_TOKEN: ${{ secrets.VAULT_TOKEN }}
-      run: |
-        echo "VAULT_ADDR=${VAULT_ADDR}" >> $GITHUB_ENV
-        echo "VAULT_TOKEN=${VAULT_TOKEN}" >> $GITHUB_ENV
 
     - name: Determine Terraform directory
       id: set-directory
@@ -249,7 +194,7 @@ jobs:
       run: terraform output -json > terraform-outputs.json
 
     - name: Upload Terraform Outputs
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: terraform-outputs-${{ github.event.inputs.environment || 'staging' }}
         path: ${{ steps.set-directory.outputs.tf_dir }}/terraform-outputs.json
@@ -270,19 +215,6 @@ jobs:
       with:
         terraform_version: ${{ env.TF_VERSION }}
         cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
-
-    - name: Configure DigitalOcean
-      env:
-        DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
-      run: echo "DIGITALOCEAN_TOKEN=${DIGITALOCEAN_TOKEN}" >> $GITHUB_ENV
-
-    - name: Configure Vault
-      env:
-        VAULT_ADDR: ${{ secrets.VAULT_ADDR }}
-        VAULT_TOKEN: ${{ secrets.VAULT_TOKEN }}
-      run: |
-        echo "VAULT_ADDR=${VAULT_ADDR}" >> $GITHUB_ENV
-        echo "VAULT_TOKEN=${VAULT_TOKEN}" >> $GITHUB_ENV
 
     - name: Determine Terraform directory
       id: set-directory
