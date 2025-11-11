@@ -1,0 +1,302 @@
+name: Terraform Deploy
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'terraform/**'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'terraform/**'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+      action:
+        description: 'Terraform action'
+        required: true
+        default: 'plan'
+        type: choice
+        options:
+          - plan
+          - apply
+          - destroy
+  workflow_call:
+    inputs:
+      environment:
+        description: 'Environment to deploy'
+        required: true
+        type: string
+      action:
+        description: 'Terraform action'
+        required: true
+        type: string
+    secrets:
+      TF_API_TOKEN:
+        required: true
+
+env:
+  TF_VERSION: '1.6.0'
+  TF_LOG: INFO
+
+jobs:
+  terraform-validate:
+    runs-on: ubuntu-latest
+    name: Terraform Validate
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ${{ env.TF_VERSION }}
+        cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+
+    - name: Terraform Format Check
+      run: |
+        find terraform/ -name "*.tf" -exec terraform fmt -check=true -diff=true {} \;
+
+    - name: Terraform Init (Staging)
+      working-directory: terraform/staging
+      run: terraform init
+
+    - name: Terraform Validate (Staging)
+      working-directory: terraform/staging
+      run: terraform validate
+
+    - name: Terraform Init (Production)
+      if: hashFiles('terraform/production/*.tf') != ''
+      working-directory: terraform/production
+      run: terraform init
+
+    - name: Terraform Validate (Production)
+      if: hashFiles('terraform/production/*.tf') != ''
+      working-directory: terraform/production
+      run: terraform validate
+
+  terraform-security:
+    runs-on: ubuntu-latest
+    name: Security Scan
+    needs: terraform-validate
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Run Checkov
+      uses: bridgecrewio/checkov-action@master
+      with:
+        directory: terraform/
+        framework: terraform
+        output_format: sarif
+        output_file_path: checkov-results.sarif
+
+    - name: Upload Checkov results
+      uses: github/codeql-action/upload-sarif@v2
+      if: always()
+      with:
+        sarif_file: checkov-results.sarif
+
+  terraform-plan:
+    runs-on: ubuntu-latest
+    name: Terraform Plan
+    needs: [terraform-validate, terraform-security]
+    environment: ${{ github.event.inputs.environment || 'staging' }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ${{ env.TF_VERSION }}
+        cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+
+    # - name: Configure DigitalOcean
+    #   env:
+    #     DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
+    #   run: echo "DIGITALOCEAN_TOKEN=${DIGITALOCEAN_TOKEN}" >> $GITHUB_ENV
+
+    # - name: Configure Vault
+    #   env:
+    #     VAULT_ADDR: ${{ secrets.VAULT_ADDR }}
+    #     VAULT_TOKEN: ${{ secrets.VAULT_TOKEN }}
+    #   run: |
+    #     echo "VAULT_ADDR=${VAULT_ADDR}" >> $GITHUB_ENV
+    #     echo "VAULT_TOKEN=${VAULT_TOKEN}" >> $GITHUB_ENV
+
+    - name: Determine Terraform directory
+      id: set-directory
+      run: |
+        if [[ "${{ github.event.inputs.environment }}" == "production" ]]; then
+          echo "tf_dir=terraform/production" >> $GITHUB_OUTPUT
+        else
+          echo "tf_dir=terraform/staging" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Terraform Init
+      working-directory: ${{ steps.set-directory.outputs.tf_dir }}
+      run: terraform init
+
+    - name: Terraform Plan
+      working-directory: ${{ steps.set-directory.outputs.tf_dir }}
+      run: |
+        terraform plan -no-color -out=tfplan
+        terraform show -no-color tfplan > plan.txt
+
+    - name: Upload Plan
+      uses: actions/upload-artifact@v3
+      with:
+        name: terraform-plan-${{ github.event.inputs.environment || 'staging' }}
+        path: ${{ steps.set-directory.outputs.tf_dir }}/plan.txt
+        retention-days: 5
+
+    - name: Comment PR with Plan
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const fs = require('fs');
+          const environment = '${{ inputs.environment || github.event.inputs.environment }}' || 'staging';
+          const planPath = '${{ steps.set-directory.outputs.tf_dir }}/plan.txt';
+          
+          let plan = '';
+          try {
+            plan = fs.readFileSync(planPath, 'utf8');
+          } catch (error) {
+            plan = 'Could not read plan file';
+          }
+          
+          const output = `## Terraform Plan - ${environment.charAt(0).toUpperCase() + environment.slice(1)}
+          
+          <details>
+          <summary>Show Plan</summary>
+          
+          \`\`\`
+          ${plan}
+          \`\`\`
+          
+          </details>
+          
+          *Pusher: @${{ github.actor }}, Action: \`${{ github.event_name }}\`, Workflow: \`${{ github.workflow }}\`*`;
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: output
+          });
+
+  terraform-apply:
+    runs-on: ubuntu-latest
+    name: Terraform Apply
+    needs: terraform-plan
+    if: github.event.inputs.action == 'apply' || (github.ref == 'refs/heads/main' && github.event_name == 'push')
+    environment: ${{ github.event.inputs.environment || 'staging' }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ${{ env.TF_VERSION }}
+        cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+
+    - name: Configure DigitalOcean
+      env:
+        DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
+      run: echo "DIGITALOCEAN_TOKEN=${DIGITALOCEAN_TOKEN}" >> $GITHUB_ENV
+
+    - name: Configure Vault
+      env:
+        VAULT_ADDR: ${{ secrets.VAULT_ADDR }}
+        VAULT_TOKEN: ${{ secrets.VAULT_TOKEN }}
+      run: |
+        echo "VAULT_ADDR=${VAULT_ADDR}" >> $GITHUB_ENV
+        echo "VAULT_TOKEN=${VAULT_TOKEN}" >> $GITHUB_ENV
+
+    - name: Determine Terraform directory
+      id: set-directory
+      run: |
+        if [[ "${{ github.event.inputs.environment }}" == "production" ]]; then
+          echo "tf_dir=terraform/production" >> $GITHUB_OUTPUT
+        else
+          echo "tf_dir=terraform/staging" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Terraform Init
+      working-directory: ${{ steps.set-directory.outputs.tf_dir }}
+      run: terraform init
+
+    - name: Terraform Apply
+      working-directory: ${{ steps.set-directory.outputs.tf_dir }}
+      run: terraform apply -auto-approve
+
+    - name: Terraform Output
+      working-directory: ${{ steps.set-directory.outputs.tf_dir }}
+      run: terraform output -json > terraform-outputs.json
+
+    - name: Upload Terraform Outputs
+      uses: actions/upload-artifact@v3
+      with:
+        name: terraform-outputs-${{ github.event.inputs.environment || 'staging' }}
+        path: ${{ steps.set-directory.outputs.tf_dir }}/terraform-outputs.json
+        retention-days: 30
+
+  terraform-destroy:
+    runs-on: ubuntu-latest
+    name: Terraform Destroy
+    if: github.event.inputs.action == 'destroy'
+    environment: ${{ github.event.inputs.environment || 'staging' }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ${{ env.TF_VERSION }}
+        cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+
+    - name: Configure DigitalOcean
+      env:
+        DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
+      run: echo "DIGITALOCEAN_TOKEN=${DIGITALOCEAN_TOKEN}" >> $GITHUB_ENV
+
+    - name: Configure Vault
+      env:
+        VAULT_ADDR: ${{ secrets.VAULT_ADDR }}
+        VAULT_TOKEN: ${{ secrets.VAULT_TOKEN }}
+      run: |
+        echo "VAULT_ADDR=${VAULT_ADDR}" >> $GITHUB_ENV
+        echo "VAULT_TOKEN=${VAULT_TOKEN}" >> $GITHUB_ENV
+
+    - name: Determine Terraform directory
+      id: set-directory
+      run: |
+        if [[ "${{ github.event.inputs.environment }}" == "production" ]]; then
+          echo "tf_dir=terraform/production" >> $GITHUB_OUTPUT
+        else
+          echo "tf_dir=terraform/staging" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Terraform Init
+      working-directory: ${{ steps.set-directory.outputs.tf_dir }}
+      run: terraform init
+
+    - name: Terraform Destroy
+      working-directory: ${{ steps.set-directory.outputs.tf_dir }}
+      run: terraform destroy -auto-approve
