@@ -66,25 +66,32 @@ jobs:
         # Get SSH keys from Vault
         SSH_RESPONSE=$(curl -s -H "X-Vault-Token: $VAULT_TOKEN" \
           ${{ inputs.vault_provider_address }}/v1/${{ inputs.vault_ssh_path }})
-        echo "${SSH_RESPONSE}"
         
-        PRIVATE_KEY=$(echo $SSH_RESPONSE | jq -r '.data.data.private_key')
-        PUBLIC_KEY=$(echo $SSH_RESPONSE | jq -r '.data.data.public_key')
-        
-        # Save private key to file
-        echo "$PRIVATE_KEY" > ~/.ssh/id_rsa
-        chmod 600 ~/.ssh/id_rsa
-        
-        # Save public key for reference
-        echo "$PUBLIC_KEY" > ~/.ssh/id_rsa.pub
-        chmod 644 ~/.ssh/id_rsa.pub
-        
-        echo "SSH keys retrieved and configured"
+        # Check if the response is valid
+        if echo "$SSH_RESPONSE" | jq -e '.data.data' > /dev/null 2>&1; then
+          PRIVATE_KEY=$(echo $SSH_RESPONSE | jq -r '.data.data.private_key')
+          
+          if [ "$PRIVATE_KEY" != "null" ] && [ "$PRIVATE_KEY" != "" ]; then
+            # Set the private key as an output (masked)
+            echo "::add-mask::$PRIVATE_KEY"
+            echo "private_key<<EOF" >> $GITHUB_OUTPUT
+            echo "$PRIVATE_KEY" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+            echo "✅ SSH key retrieved from Vault"
+          else
+            echo "❌ Private key is null or empty"
+            exit 1
+          fi
+        else
+          echo "❌ Failed to retrieve SSH keys from Vault"
+          echo "Response: $SSH_RESPONSE"
+          exit 1
+        fi
     
     - name: Setup SSH Agent
       uses: webfactory/ssh-agent@v0.8.0
       with:
-        ssh-private-key-file: ~/.ssh/id_rsa
+        ssh-private-key: ${{ steps.ssh_keys.outputs.private_key }}
 
     - name: Install dependencies
       run: |
