@@ -53,6 +53,8 @@ resource "vault_generic_secret" "ssh_keypair" {
     })
 }
 
+#hello
+
 #Create DigitalOcean SSH key using the generated public key
 resource "digitalocean_ssh_key" "vault_generated" {
     name       = "vault-generated-key"
