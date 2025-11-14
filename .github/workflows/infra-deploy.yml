@@ -31,8 +31,8 @@ jobs:
   terraform:
     uses: ./.github/workflows/terraform-deploy.yml
     with:
-      environment: ${{ github.event.inputs.environment || 'production' }}
-      action: ${{ github.event.inputs.terraform_action || 'apply' }}
+      environment: ${{ inputs.environment || 'production' }}
+      action: ${{ inputs.terraform_action || 'apply' }}
     secrets: inherit
   
   ansible:

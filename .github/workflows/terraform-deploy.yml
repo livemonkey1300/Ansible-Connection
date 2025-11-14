@@ -56,7 +56,7 @@ on:
 jobs:
   terraform:
     runs-on: ubuntu-latest
-    environment: ${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'production' || 'staging') }}
+    environment: ${{ inputs.environment || github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'production' || 'staging') }}
     
     env:
       TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
@@ -77,39 +77,46 @@ jobs:
       with:
         terraform_version: "1.5.0"
         cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
-    
+
+    - name: Set variables
+      id: vars
+      run: |
+        # Determine environment and action based on trigger type
+        if [ "${{ github.event_name }}" == "workflow_call" ]; then
+          echo "environment=${{ inputs.environment }}" >> $GITHUB_OUTPUT
+          echo "action=${{ inputs.action }}" >> $GITHUB_OUTPUT
+        else
+          echo "environment=${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'production' || 'staging') }}" >> $GITHUB_OUTPUT
+          echo "action=${{ github.event.inputs.action || (github.ref == 'refs/heads/main' && 'apply' || 'plan') }}" >> $GITHUB_OUTPUT
+        fi
+
     - name: Terraform Init
       run: terraform init
-      working-directory: ./terraform/${{ github.event.inputs.environment || 'staging' }}
-    
+      working-directory: ./terraform/${{ steps.vars.outputs.environment }}
+
+
     - name: Terraform Plan
       run: terraform plan -no-color
-      working-directory: ./terraform/${{ github.event.inputs.environment || 'staging' }}
-      env:
-        VAULT_TOKEN: ${{ secrets.VAULT_TOKEN }}
+      working-directory: ./terraform/${{ steps.vars.outputs.environment }}
+
     
     - name: Terraform Apply
-      if: github.event.inputs.action == 'apply' || (github.ref == 'refs/heads/main' && github.event_name == 'push')
+      if: steps.vars.outputs.action == 'apply'
       run: terraform apply -auto-approve
-      working-directory: ./terraform/${{ github.event.inputs.environment || 'staging' }}
-      env:
-        VAULT_TOKEN: ${{ secrets.VAULT_TOKEN }}
-    
+      working-directory: ./terraform/${{ steps.vars.outputs.environment }}
+
+
+    - name: Terraform Destroy
+      if: steps.vars.outputs.action == 'destroy'
+      run: terraform destroy -auto-approve
+      working-directory: ./terraform/${{ steps.vars.outputs.environment }}
+      
     - name: Get Terraform Outputs
       id: tf_output
-      if: github.event.inputs.action == 'apply' || (github.ref == 'refs/heads/main' && github.event_name == 'push')
+      if: steps.vars.outputs.action == 'apply'
       run: |
         echo "role_id=$(terraform output -raw github_actions_role_id)" >> $GITHUB_OUTPUT
         echo "secret_id=$(terraform output -raw github_actions_secret_id)" >> $GITHUB_OUTPUT
         echo "vault_ssh_path=$(terraform output -raw vault_ssh_key_path)" >> $GITHUB_OUTPUT
         echo "vault_provider_address=$(terraform output -raw vault_provider_address)" >> $GITHUB_OUTPUT
-      working-directory: ./terraform/${{ github.event.inputs.environment || 'staging' }}
-      env:
-        VAULT_TOKEN: ${{ secrets.VAULT_TOKEN }}
-
-    - name: Terraform Destroy
-      if: github.event.inputs.action == 'destroy'
-      run: terraform destroy -auto-approve
-      working-directory: ./terraform/${{ github.event.inputs.environment || 'staging' }}
-      env:
-        VAULT_TOKEN: ${{ secrets.VAULT_TOKEN }}
+      working-directory: ./terraform/${{ steps.vars.outputs.environment }}
