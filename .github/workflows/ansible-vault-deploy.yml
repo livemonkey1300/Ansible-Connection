@@ -97,6 +97,9 @@ jobs:
     - name: Check Ansible Inventory
       run: |
         ansible-inventory --graph 
+      env:
+        VAULT_ADDR: ${{ inputs.vault_provider_address }}
+        VAULT_TOKEN: ${{ env.VAULT_TOKEN }}  
         
         
     - name: Run Ansible Playbook

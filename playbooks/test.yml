@@ -1,6 +1,6 @@
 ---
 - name: Basic server setup
-  hosts: webservers
+  hosts: all
   become: yes
   tasks:
     - name: Update package cache
