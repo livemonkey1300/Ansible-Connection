@@ -1,0 +1,106 @@
+name: Ansible Deploy with Vault
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+      role_id:
+        required: true
+        type: string
+      secret_id:
+        required: true
+        type: string
+      vault_ssh_path:
+        required: true
+        type: string
+      vault_provider_address:
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+        - staging
+        - production
+
+jobs:
+  ansible-deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+    
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies
+      run: |
+        pip install ansible hvac requests
+        ansible-galaxy collection install community.hashi_vault
+    
+    - name: Authenticate with Vault using AppRole
+      id: vault_auth
+      run: |
+        # Authenticate with Vault using AppRole
+        VAULT_TOKEN=$(curl -s -X POST \
+          -d "{\"role_id\":\"${{ inputs.role_id }}\",\"secret_id\":\"${{ inputs.secret_id }}\"}" \
+          ${{ inputs.vault_provider_address }}/v1/auth/approle/login | \
+          jq -r '.auth.client_token')
+        
+        echo "::add-mask::$VAULT_TOKEN"
+        echo "VAULT_TOKEN=$VAULT_TOKEN" >> $GITHUB_ENV
+    
+    - name: Retrieve SSH Keys from Vault
+      id: ssh_keys
+      run: |
+        # Get SSH keys from Vault
+        SSH_RESPONSE=$(curl -s -H "X-Vault-Token: $VAULT_TOKEN" \
+          ${{ inputs.vault_provider_address }}/v1/${{ inputs.vault_ssh_path }})
+        
+        PRIVATE_KEY=$(echo $SSH_RESPONSE | jq -r '.data.data.private_key')
+        PUBLIC_KEY=$(echo $SSH_RESPONSE | jq -r '.data.data.public_key')
+        
+        # Save private key to file
+        echo "$PRIVATE_KEY" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        
+        # Save public key for reference
+        echo "$PUBLIC_KEY" > ~/.ssh/id_rsa.pub
+        chmod 644 ~/.ssh/id_rsa.pub
+        
+        echo "SSH keys retrieved and configured"
+    
+    - name: Setup SSH Agent
+      uses: webfactory/ssh-agent@v0.8.0
+      with:
+        ssh-private-key-file: ~/.ssh/id_rsa
+
+    - name: Install dependencies
+      run: |
+        pip install ansible hvac requests
+        ansible-galaxy install -r requirements.yml
+        
+    - name: Run Ansible Playbook
+      run: |
+        ansible-playbook playbooks/test.yml \
+          --extra-vars "target_env=${{ inputs.environment }}" -v
+      env:
+        ANSIBLE_HOST_KEY_CHECKING: False
+        VAULT_ADDR: ${{ inputs.vault_provider_address }}
+        VAULT_TOKEN: ${{ env.VAULT_TOKEN }}
+    
+    - name: Cleanup
+      if: always()
+      run: |
+        rm -f ~/.ssh/id_rsa ~/.ssh/id_rsa.pub
+        unset VAULT_TOKEN

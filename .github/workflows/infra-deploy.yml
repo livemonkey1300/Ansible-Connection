@@ -1,0 +1,39 @@
+name: Full Infrastructure Deploy with Vault
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+        - staging
+        - production
+  push:
+    branches: [main]
+    paths:
+      - 'terraform/**'
+      - 'playbooks/**'
+      - 'inventory/**'
+
+jobs:
+  terraform:
+    uses: ./.github/workflows/terraform-deploy.yml
+    with:
+      environment: ${{ github.event.inputs.environment || 'production' }}
+      action: 'apply'
+    secrets: inherit
+  
+  ansible:
+    needs: terraform
+    if: needs.terraform.outputs.role_id != ''
+    uses: ./.github/workflows/ansible-vault-deploy.yml
+    with:
+      environment: ${{ github.event.inputs.environment || 'production' }}
+      role_id: ${{ needs.terraform.outputs.role_id }}
+      secret_id: ${{ needs.terraform.outputs.secret_id }}
+      vault_ssh_path: ${{ needs.terraform.outputs.vault_ssh_path }}
+      vault_provider_address: ${{ needs.terraform.outputs.vault_provider_address }}
+    secrets: inherit

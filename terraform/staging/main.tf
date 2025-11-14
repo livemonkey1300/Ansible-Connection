@@ -21,6 +21,14 @@ required_providers {
 
 provider "vault" {}
 
+data "vault_generic_secret" "digitalocean_token" {
+  path = "token/digitalocean"
+}
+
+provider "digitalocean" {
+  token = jsondecode(data.vault_generic_secret.digitalocean_token.data_json)["token"]
+}
+
 resource "vault_mount" "kv" {
     path        = "secret"
     type        = "kv"
@@ -45,19 +53,34 @@ resource "vault_generic_secret" "ssh_keypair" {
     })
 }
 
-# Create DigitalOcean SSH key using the generated public key
-# resource "digitalocean_ssh_key" "vault_generated" {
-#     name       = "vault-generated-key"
-#     public_key = jsondecode(vault_generic_secret.ssh_keypair.data_json)["public_key"]
-# }
+#Create DigitalOcean SSH key using the generated public key
+resource "digitalocean_ssh_key" "vault_generated" {
+    name       = "vault-generated-key"
+    public_key = jsondecode(vault_generic_secret.ssh_keypair.data_json)["public_key"]
+}
+
+
+
+# Create a small DigitalOcean droplet
+resource "digitalocean_droplet" "staging" {
+  image  = "ubuntu-22-04-x64"
+  name   = "ansible-connection-staging"
+  region = var.digital_region
+  size   = "s-1vcpu-1gb"
+  ssh_keys = [digitalocean_ssh_key.vault_generated.id]
+  tags = [ var.server_tag ]
+}
 
 
 # Create GitHub Actions service account policy
 resource "vault_policy" "github_actions_policy" {
-    name = "github-actions-ssh-policy"
-    
-    policy = <<EOT
+  name = "github-actions-ssh-policy"
+  
+  policy = <<EOT
 path "secret/data/ssh-keys" {
+  capabilities = ["read"]
+}
+path "token/data/digitalocean" {
   capabilities = ["read"]
 }
 path "auth/token/lookup-self" {
@@ -105,4 +128,9 @@ output "github_actions_secret_id" {
 output "vault_ssh_key_path" {
     value = "secret/data/ssh-keys"
     description = "Path to retrieve SSH keys from Vault"
+}
+
+output "vault_provider_address" {
+    value =  "https://vault.devops-ottawa.com"
+    description = "Vault provider address"
 }

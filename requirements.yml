@@ -1,0 +1,5 @@
+---
+collections:
+  - name: community.digitalocean
+  - name: community.general
+  - name: community.hashi_vault
