@@ -11,6 +11,15 @@ on:
         options:
         - staging
         - production
+      action:
+        description: 'Terraform action'
+        required: true
+        default: 'plan'
+        type: choice
+        options:
+        - plan
+        - apply
+        - destroy
   push:
     branches: [main]
     paths:
