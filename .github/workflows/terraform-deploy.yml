@@ -59,8 +59,6 @@ jobs:
     environment: ${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'production' || 'staging') }}
     
     env:
-      TF_CLOUD_ORGANIZATION: "gcp-live"
-      TF_WORKSPACE: "ansible-connection-${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'production' || 'staging') }}"
       TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
 
     
