@@ -66,6 +66,7 @@ jobs:
         # Get SSH keys from Vault
         SSH_RESPONSE=$(curl -s -H "X-Vault-Token: $VAULT_TOKEN" \
           ${{ inputs.vault_provider_address }}/v1/${{ inputs.vault_ssh_path }})
+        echo "${SSH_RESPONSE}"
         
         PRIVATE_KEY=$(echo $SSH_RESPONSE | jq -r '.data.data.private_key')
         PUBLIC_KEY=$(echo $SSH_RESPONSE | jq -r '.data.data.public_key')
