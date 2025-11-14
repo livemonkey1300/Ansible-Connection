@@ -112,19 +112,19 @@ jobs:
 
     
     - name: Terraform Apply
-      if: steps.vars.outputs.action == 'apply'
+      if: inputs.action == 'apply'
       run: terraform apply -auto-approve
       working-directory: ./terraform/${{ steps.vars.outputs.environment }}
 
 
     - name: Terraform Destroy
-      if: steps.vars.outputs.action == 'destroy'
+      if: inputs.action == 'destroy'
       run: terraform destroy -auto-approve
       working-directory: ./terraform/${{ steps.vars.outputs.environment }}
       
     - name: Get Terraform Outputs
       id: tf_output
-      if: steps.vars.outputs.action == 'apply'
+      if: inputs.action == 'apply'
       run: |
         echo "role_id=$(terraform output -raw github_actions_role_id)" >> $GITHUB_OUTPUT
         echo "secret_id=$(terraform output -raw github_actions_secret_id)" >> $GITHUB_OUTPUT
