@@ -90,6 +90,17 @@ jobs:
           echo "action=${{ github.event.inputs.action || (github.ref == 'refs/heads/main' && 'apply' || 'plan') }}" >> $GITHUB_OUTPUT
         fi
 
+    - name: Debug Variables
+      run: |
+        echo "🔍 Debug Information:"
+        echo "Environment: ${{ steps.vars.outputs.environment }}"
+        echo "Action: ${{ steps.vars.outputs.action }}"
+        echo "Event name: ${{ github.event_name }}"
+        echo "Manual inputs environment: ${{ github.event.inputs.environment }}"
+        echo "Manual inputs action: ${{ github.event.inputs.action }}"
+        echo "Workflow call inputs environment: ${{ inputs.environment }}"
+        echo "Workflow call inputs action: ${{ inputs.action }}"
+
     - name: Terraform Init
       run: terraform init
       working-directory: ./terraform/${{ steps.vars.outputs.environment }}
