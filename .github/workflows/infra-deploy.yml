@@ -11,10 +11,10 @@ on:
         options:
         - staging
         - production
-      action:
+      terraform_action:
         description: 'Terraform action'
         required: true
-        default: 'plan'
+        default: 'apply'
         type: choice
         options:
         - plan
@@ -32,7 +32,7 @@ jobs:
     uses: ./.github/workflows/terraform-deploy.yml
     with:
       environment: ${{ github.event.inputs.environment || 'production' }}
-      action: 'apply'
+      action: ${{ github.event.inputs.terraform_action || 'apply' }}
     secrets: inherit
   
   ansible:
