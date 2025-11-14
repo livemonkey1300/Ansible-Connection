@@ -46,7 +46,7 @@ jobs:
     - name: Install dependencies
       run: |
         pip install ansible hvac requests
-        ansible-galaxy collection install community.hashi_vault
+        ansible-galaxy install -r requirements.yml
     
     - name: Authenticate with Vault using AppRole
       id: vault_auth
@@ -93,10 +93,11 @@ jobs:
       with:
         ssh-private-key: ${{ steps.ssh_keys.outputs.private_key }}
 
-    - name: Install dependencies
+
+    - name: Check Ansible Inventory
       run: |
-        pip install ansible hvac requests
-        ansible-galaxy install -r requirements.yml
+        ansible-inventory --graph 
+        
         
     - name: Run Ansible Playbook
       run: |
