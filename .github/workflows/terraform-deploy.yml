@@ -1,6 +1,31 @@
 name: Terraform Deploy
 
 on:
+  workflow_call:
+    inputs:
+      environment:
+        description: 'Environment to deploy'
+        required: true
+        type: string
+      action:
+        description: 'Terraform action'
+        required: true
+        type: string
+        default: 'plan'
+    outputs:
+      role_id:
+        description: 'Vault AppRole Role ID'
+        value: ${{ jobs.terraform.outputs.role_id }}
+      secret_id:
+        description: 'Vault AppRole Secret ID'
+        value: ${{ jobs.terraform.outputs.secret_id }}
+      vault_ssh_path:
+        description: 'Vault SSH key path'
+        value: ${{ jobs.terraform.outputs.vault_ssh_path }}
+      vault_provider_address:
+        description: 'Vault server address'
+        value: ${{ jobs.terraform.outputs.vault_provider_address }}
+        
   workflow_dispatch:
     inputs:
       environment:
