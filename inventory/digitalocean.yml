@@ -5,9 +5,11 @@ attributes:
   - name
   - tags
   - networks
+  - image
 keyed_groups:
   - key: do_tags | lower
     prefix: ""
     separator: ""
 compose:
   ansible_host: do_networks.v4 | selectattr('type','eq','public') | map(attribute='ip_address') | first
+  ansible_user: "{{ 'root' if do_image.slug.startswith('ubuntu') else 'root' }}"
