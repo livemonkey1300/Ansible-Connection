@@ -60,9 +60,12 @@ jobs:
         echo "::add-mask::$VAULT_TOKEN"
         echo "VAULT_TOKEN=$VAULT_TOKEN" >> $GITHUB_ENV
     
-    - name: Retrieve SSH Keys from Vault
+    - name: Retrieve and Setup SSH Keys from Vault
       id: ssh_keys
       run: |
+        # Create SSH directory
+        mkdir -p ~/.ssh
+        
         # Get SSH keys from Vault
         SSH_RESPONSE=$(curl -s -H "X-Vault-Token: $VAULT_TOKEN" \
           ${{ inputs.vault_provider_address }}/v1/${{ inputs.vault_ssh_path }})
@@ -72,12 +75,31 @@ jobs:
           PRIVATE_KEY=$(echo $SSH_RESPONSE | jq -r '.data.data.private_key')
           
           if [ "$PRIVATE_KEY" != "null" ] && [ "$PRIVATE_KEY" != "" ]; then
-            # Set the private key as an output (masked)
-            echo "::add-mask::$PRIVATE_KEY"
-            echo "private_key<<EOF" >> $GITHUB_OUTPUT
-            echo "$PRIVATE_KEY" >> $GITHUB_OUTPUT
-            echo "EOF" >> $GITHUB_OUTPUT
-            echo "✅ SSH key retrieved from Vault"
+            # Save private key to file
+            echo "$PRIVATE_KEY" > ~/.ssh/id_rsa
+            chmod 600 ~/.ssh/id_rsa
+            
+            # Create SSH config to disable host key checking
+            cat > ~/.ssh/config << EOF
+        Host *
+            StrictHostKeyChecking no
+            UserKnownHostsFile /dev/null
+            IdentityFile ~/.ssh/id_rsa
+        EOF
+            chmod 600 ~/.ssh/config
+            
+            # Start SSH agent and add key
+            eval "$(ssh-agent -s)"
+            ssh-add ~/.ssh/id_rsa
+            
+            # Export SSH_AUTH_SOCK for subsequent steps
+            echo "SSH_AUTH_SOCK=$SSH_AUTH_SOCK" >> $GITHUB_ENV
+            echo "SSH_AGENT_PID=$SSH_AGENT_PID" >> $GITHUB_ENV
+            
+            echo "✅ SSH keys configured and added to agent"
+            
+            # Test SSH key
+            ssh-add -l
           else
             echo "❌ Private key is null or empty"
             exit 1
@@ -87,11 +109,8 @@ jobs:
           echo "Response: $SSH_RESPONSE"
           exit 1
         fi
-    
-    - name: Setup SSH Agent
-      uses: webfactory/ssh-agent@v0.8.0
-      with:
-        ssh-private-key: ${{ steps.ssh_keys.outputs.private_key }}
+      env:
+        VAULT_TOKEN: ${{ env.VAULT_TOKEN }}
 
 
     - name: Check Ansible Inventory
