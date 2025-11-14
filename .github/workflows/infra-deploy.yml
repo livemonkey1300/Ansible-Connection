@@ -37,7 +37,7 @@ jobs:
   
   ansible:
     needs: terraform
-    if: needs.terraform.outputs.role_id != ''
+    if: (inputs.terraform_action == 'apply') && !failure() && !cancelled()
     uses: ./.github/workflows/ansible-vault-deploy.yml
     with:
       environment: ${{ github.event.inputs.environment || 'production' }}
